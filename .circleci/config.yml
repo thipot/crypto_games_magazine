@@ -13,14 +13,6 @@ jobs:
 
     steps:
       - checkout
-
-      # restore gem from cache
-      - restore_cache:
-          keys:
-            - gem-cache-v1-{{ checksum "~/repo/backend/Gemfile.lock" }}
-            - gem-cache-v1-
-          working_directory: ~/repo/backend
-
       # gem install
       - run:
           command: |
@@ -28,13 +20,6 @@ jobs:
             bundle config set path 'vendor/bundle'
             bundle install --jobs=4 --retry=3
           working_directory: ~/repo/backend
-
-      - save_cache:
-          key: gem-cache-v1-{{ checksum "~/repo/backend/Gemfile.lock" }}
-          paths:
-            - ~/repo/backend/vendor/bundle
-          working_directory: ~/repo/backend
-
       # Database setup
       - run:
           command: bundle exec rails db:create
@@ -42,12 +27,10 @@ jobs:
       - run:
           command: bundle exec rails db:migrate
           working_directory: ~/repo/backend
-
       - run:
           name: create directory to store test results
           command: mkdir /tmp/test-results
           working_directory: ~/repo/backend
-
       # run tests
       - run:
           name: RSpec
@@ -75,18 +58,9 @@ jobs:
 
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - v1-dependencies-{{ checksum "~/repo/frontend/package.json" }}
-          working_directory: ~/repo/frontend
       - run:
           name: install-packages
           command: npm install
-          working_directory: ~/repo/frontend
-      - save_cache:
-          paths:
-            - node_modules
-          key: v1-dependencies-{{ checksum "~/repo/frontend/package.json" }}
           working_directory: ~/repo/frontend
       - run:
           name: test
