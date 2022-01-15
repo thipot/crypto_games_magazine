@@ -1,0 +1,10 @@
+FROM node:16.11.0
+
+WORKDIR /app
+
+ENV LANG C.UTF-8
+ENV TZ Asia/Tokyo
+ADD . /app
+
+ENV HOST 0.0.0.0
+EXPOSE 3000
