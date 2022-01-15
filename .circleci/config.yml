@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   test_backend:
     docker:
-      - image: circleci/ruby:2.6.6-stretch-node
+      - image: circleci/ruby:2.7.5
         environment:
           RAILS_ENV: test
           DB_HOST: 127.0.0.1
@@ -67,7 +67,7 @@ jobs:
 
   test_frontend:
     docker:
-      - image: circleci/node:14.3
+      - image: circleci/node:16.11.0
         environment:
           NODE_ENV: test
 
