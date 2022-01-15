@@ -1,5 +1,9 @@
 version: 2.1
 
+orbs:
+  aws-ecr: circleci/aws-ecr@6.12.2
+  aws-ecs: circleci/aws-ecs@1.3.0
+
 jobs:
   test_backend:
     docker:
@@ -13,6 +17,14 @@ jobs:
 
     steps:
       - checkout
+
+      # restore gem from cache
+      - restore_cache:
+          keys:
+            - gem-cache-v1-{{ checksum "~/repo/backend/Gemfile.lock" }}
+            - gem-cache-v1-
+          working_directory: ~/repo/backend
+
       # gem install
       - run:
           command: |
@@ -20,6 +32,13 @@ jobs:
             bundle config set path 'vendor/bundle'
             bundle install --jobs=4 --retry=3
           working_directory: ~/repo/backend
+
+      - save_cache:
+          key: gem-cache-v1-{{ checksum "~/repo/backend/Gemfile.lock" }}
+          paths:
+            - ~/repo/backend/vendor/bundle
+          working_directory: ~/repo/backend
+
       # Database setup
       - run:
           command: bundle exec rails db:create
@@ -27,11 +46,12 @@ jobs:
       - run:
           command: bundle exec rails db:migrate
           working_directory: ~/repo/backend
+
       - run:
           name: create directory to store test results
           command: mkdir /tmp/test-results
           working_directory: ~/repo/backend
-      # run tests
+
       - run:
           name: RSpec
           command: |
@@ -50,7 +70,7 @@ jobs:
 
   test_frontend:
     docker:
-      - image: circleci/node:16.11
+      - image: circleci/node:14.3
         environment:
           NODE_ENV: test
 
@@ -58,14 +78,47 @@ jobs:
 
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "~/repo/frontend/package.json" }}
+          working_directory: ~/repo/frontend
       - run:
           name: install-packages
           command: npm install
+          working_directory: ~/repo/frontend
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "~/repo/frontend/package.json" }}
           working_directory: ~/repo/frontend
       - run:
           name: test
           command: npm run test
           working_directory: ~/repo/frontend
+
+  build_and_push_image_backend:
+    machine:
+      image: ubuntu-1604:201903-01
+    steps:
+      - checkout
+      - aws-ecr/build-and-push-image:
+          account-url: AWS_ACCOUNT_URL
+          repo: "zenn-app-backend"
+          region: AWS_REGION
+          tag: "${CIRCLE_SHA1}"
+          path: ./backend/
+
+  build_and_push_image_frontend:
+    machine:
+      image: ubuntu-1604:201903-01
+    steps:
+      - checkout
+      - aws-ecr/build-and-push-image:
+          account-url: AWS_ACCOUNT_URL
+          repo: "zenn-app-frontend"
+          region: AWS_REGION
+          tag: "${CIRCLE_SHA1}"
+          path: ./frontend/
 
 workflows:
   version: 2
@@ -79,3 +132,49 @@ workflows:
           filters:
             branches:
               ignore: main
+  test_and_deploy:
+    jobs:
+      - test_backend:
+          filters:
+            branches:
+              only: main
+      - test_frontend:
+          filters:
+            branches:
+              only: main
+      - build_and_push_image_backend:
+          requires:
+            - test_frontend
+            - test_backend
+          filters:
+            branches:
+              only: main
+      - build_and_push_image_frontend:
+          requires:
+            - test_frontend
+            - test_backend
+          filters:
+            branches:
+              only: main
+      - aws-ecs/deploy-service-update:
+          requires:
+            - build_and_push_image_backend
+            - build_and_push_image_frontend
+          family: "zenn-app-task-backend"
+          service-name: "zenn-app-service-backend"
+          cluster-name: "zenn-app-cluster"
+          container-image-name-updates: "container=zenn-app-container-backend,tag=${CIRCLE_SHA1}"
+          filters:
+            branches:
+              only: main
+      - aws-ecs/deploy-service-update:
+          requires:
+            - build_and_push_image_backend
+            - build_and_push_image_frontend
+          family: "zenn-app-task-frontend"
+          service-name: "zenn-app-service-frontend"
+          cluster-name: "zenn-app-cluster"
+          container-image-name-updates: "container=zenn-app-container-frontend,tag=${CIRCLE_SHA1}"
+          filters:
+            branches:
+              only: main
